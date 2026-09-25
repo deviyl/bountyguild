@@ -1,6 +1,9 @@
-// Bounty Guild frontend. Talks only to same-origin /api/* endpoints on the
-// Worker. Holds no secrets — the session lives in an HttpOnly cookie this
-// script can never read.
+// Bounty Guild frontend. Deployed on GitHub Pages, calling out to the
+// Cloudflare Worker as a separate API origin (credentials: "include" so
+// the session cookie rides along cross-site). Holds no secrets — the
+// session lives in an HttpOnly cookie this script can never read.
+
+const API_BASE = "https://bountyguild.deviyl.workers.dev";
 
 const state = { user: null, pollTimer: null };
 
@@ -12,10 +15,10 @@ const $identity = document.getElementById("identity");
 const BOUNTY_COSTS = { 1: 4, 2: 6, 3: 8 };
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    credentials: "same-origin",
+    credentials: "include",
   });
   const data = await res.json().catch(() => ({ success: false, message: "Unexpected response." }));
   return { ok: res.ok, status: res.status, data };
@@ -30,7 +33,8 @@ function fmtMoney(n) {
 // ---------------------------------------------------------------------
 
 function render(viewName) {
-  window.location.hash = viewName;
+  // The URL never changes — this is a single-page app that only ever
+  // lives at one address. View state is tracked purely in memory.
   $app.innerHTML = "";
   const tpl = document.getElementById(`tpl-${viewName}`);
   $app.appendChild(tpl.content.cloneNode(true));
@@ -305,10 +309,5 @@ function escapeHtml(str) {
   const { data } = await api("/api/me");
   state.user = data.user || null;
   updateChrome();
-  if (state.user) {
-    const requested = window.location.hash.replace("#", "");
-    render(requested && document.getElementById(`tpl-${requested}`) ? requested : "bounties");
-  } else {
-    render("login");
-  }
+  render(state.user ? "bounties" : "login");
 })();

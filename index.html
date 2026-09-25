@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bounty Guild</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header id="topbar" class="topbar hidden">
+  <div class="brand">Bounty Guild</div>
+  <nav id="nav" class="nav"></nav>
+  <div class="identity" id="identity"></div>
+</header>
+
+<main id="app" class="app"></main>
+
+<template id="tpl-login">
+  <section class="panel login-panel">
+    <h1 class="wordmark">Bounty Guild</h1>
+    <p class="lede">Post a contract. Someone hospitalizes your target. You pay, they collect.</p>
+
+    <form id="login-form" class="stack">
+      <label class="field">
+        <span class="field-label">Torn API key</span>
+        <input type="password" id="api-key-input" autocomplete="off" required />
+      </label>
+      <div id="login-error" class="error-line" hidden></div>
+      <button type="submit" class="btn btn-primary">Log in</button>
+    </form>
+
+    <details class="disclosure">
+      <summary>How do I get a Bounty Guild API key?</summary>
+      <div class="disclosure-body">
+        <p>Create a limited-access key on Torn with these permissions selected: basic, attacks, profile, and merits. Bounty Guild never asks for more than it needs to verify your identity, your hits, and your merits.</p>
+        <a class="ext-link" target="_blank" rel="noopener"
+           href="https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bounty%20Guild&user=basic,attacks,profile,merits">
+          Create your key on Torn &#8599;
+        </a>
+      </div>
+    </details>
+  </section>
+</template>
+
+<template id="tpl-bounties">
+  <section class="view">
+    <div class="view-head">
+      <h2>Active bounties</h2>
+      <p class="view-sub">Only contracts with confirmed payment are listed here. The person who posted a bounty stays anonymous.</p>
+    </div>
+    <div id="bounty-list" class="bounty-grid"></div>
+  </section>
+</template>
+
+<template id="tpl-bounty-card">
+  <article class="bounty-card">
+    <div class="bounty-card-level" data-level></div>
+    <div class="bounty-card-body">
+      <div class="bounty-target">
+        <span class="target-name" data-target-name></span>
+        <span class="mono target-id" data-target-id></span>
+      </div>
+      <div class="bounty-reward mono" data-reward></div>
+    </div>
+    <button class="btn btn-claim" data-action="claim">Claim bounty</button>
+    <div class="bounty-status" data-status hidden></div>
+  </article>
+</template>
+
+<template id="tpl-place-bounty">
+  <section class="view">
+    <div class="view-head">
+      <h2>Place a bounty</h2>
+      <p class="view-sub">Your identity as the placer is never shown publicly.</p>
+    </div>
+
+    <form id="place-form" class="panel stack">
+      <label class="field">
+        <span class="field-label">Target Torn user ID</span>
+        <input type="text" id="target-id-input" inputmode="numeric" required />
+      </label>
+
+      <fieldset class="field">
+        <legend class="field-label">Bounty level</legend>
+        <label class="radio-row"><input type="radio" name="level" value="1" checked /> Level 1 — hospitalize the target — 4 Xanax</label>
+        <label class="radio-row"><input type="radio" name="level" value="2" /> Level 2 — hospitalize + 10 Hospitalizing merits or a stricken hit — 6 Xanax</label>
+        <label class="radio-row"><input type="radio" name="level" value="3" /> Level 3 — hospitalize + 10 Hospitalizing merits and a stricken hit — 8 Xanax</label>
+      </fieldset>
+
+      <label class="field field-narrow">
+        <span class="field-label">Quantity</span>
+        <input type="number" id="quantity-input" value="1" min="1" max="100" required />
+      </label>
+
+      <div class="cost-line">
+        Total required: <span class="mono" id="cost-total">4</span> Xanax
+      </div>
+
+      <div id="place-error" class="error-line" hidden></div>
+      <button type="submit" class="btn btn-primary">Place bounty</button>
+    </form>
+
+    <section id="pending-order" class="panel pending-order" hidden>
+      <h3>Payment pending</h3>
+      <p>
+        Send <strong class="mono" id="pending-amount"></strong> Xanax to
+        <a id="pending-receiver-link" target="_blank" rel="noopener" class="ext-link"></a>
+        with the message <strong class="mono">bounty</strong>.
+      </p>
+      <p class="countdown">Time remaining: <span class="mono" id="pending-countdown"></span></p>
+      <p class="hint">Sent less than the full amount and the window closed? You'll need to request a refund from an admin — partial payments are not returned automatically.</p>
+    </section>
+  </section>
+</template>
+
+<template id="tpl-admin">
+  <section class="view">
+    <div class="view-head">
+      <h2>Outstanding payouts</h2>
+      <p class="view-sub">Grouped by the claimant who is owed money. Bounty placers are never shown here.</p>
+    </div>
+    <div id="admin-list" class="stack"></div>
+  </section>
+</template>
+
+<template id="tpl-admin-claimant">
+  <article class="panel claimant-card">
+    <div class="claimant-head">
+      <a target="_blank" rel="noopener" class="claimant-name" data-claimant-link></a>
+      <span class="mono claimant-total" data-total></span>
+    </div>
+    <table class="claimant-table">
+      <thead><tr><th>Target</th><th>Level</th><th>Reward</th><th></th></tr></thead>
+      <tbody data-rows></tbody>
+    </table>
+    <button class="btn btn-secondary" data-action="mark-paid">Mark all as paid</button>
+  </article>
+</template>
+
+<script src="script.js"></script>
+</body>
+</html>

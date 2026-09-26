@@ -4,8 +4,12 @@
 // session lives in an HttpOnly cookie this script can never read.
 
 const API_BASE = "https://bountyguild.deviyl.workers.dev";
+const VIEW_STORAGE_KEY = "bg_current_view";
+const ORDERS_CACHE_KEY = "bg_orders_cache_v1";
+const RESOLVED_RETENTION_MS = 60 * 60 * 1000; // keep "paid"/"expired" notices visible for 1 hour
+const POLL_INTERVAL_MS = 5000;
 
-const state = { user: null, pollTimer: null };
+const state = { user: null, pollTimer: null, tickTimer: null };
 
 const $app = document.getElementById("app");
 const $topbar = document.getElementById("topbar");
@@ -13,6 +17,8 @@ const $nav = document.getElementById("nav");
 const $identity = document.getElementById("identity");
 
 const BOUNTY_COSTS = { 1: 4, 2: 6, 3: 8 };
+const ADMIN_ONLY_VIEWS = new Set(["admin", "log"]);
+const VALID_VIEWS = new Set(["bounties", "place-bounty", "admin", "log"]);
 
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -29,22 +35,122 @@ function fmtMoney(n) {
 }
 
 // ---------------------------------------------------------------------
+// Local order cache — this is what lets pending/expired/paid notices
+// survive a refresh or a navigation away, even after the server has
+// removed the underlying order once it resolves.
+// ---------------------------------------------------------------------
+
+function loadOrderCache() {
+  try {
+    const raw = localStorage.getItem(ORDERS_CACHE_KEY);
+    if (!raw) return { orders: {}, receiver: null, message: "bounty" };
+    const parsed = JSON.parse(raw);
+    return { orders: parsed.orders || {}, receiver: parsed.receiver || null, message: parsed.message || "bounty" };
+  } catch {
+    return { orders: {}, receiver: null, message: "bounty" };
+  }
+}
+function saveOrderCache(cache) {
+  try { localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(cache)); } catch { /* storage unavailable, ignore */ }
+}
+
+function cacheNewOrder(order) {
+  const cache = loadOrderCache();
+  cache.receiver = order.receiver;
+  cache.message = order.message;
+  cache.orders[order.id] = { ...order, firstSeenAt: Date.now(), resolvedAt: null };
+  saveOrderCache(cache);
+  return cache;
+}
+
+/** Reconcile the local cache against the server's list of still-open orders. */
+async function refreshOrders() {
+  const { data } = await api("/api/orders/mine");
+  if (!data.success) return;
+
+  const cache = loadOrderCache();
+  cache.receiver = data.receiver;
+  cache.message = data.message;
+
+  const serverById = new Map(data.orders.map((o) => [o.id, o]));
+  const now = Date.now();
+
+  // Update/insert everything the server still knows about.
+  for (const order of data.orders) {
+    const existing = cache.orders[order.id];
+    cache.orders[order.id] = {
+      ...order,
+      firstSeenAt: existing ? existing.firstSeenAt : now,
+      resolvedAt: null,
+    };
+  }
+
+  // Anything we were tracking as pending that the server no longer has
+  // must have resolved (paid -> activated, or expired) and been cleaned
+  // up server-side. Infer which, based on the window we already knew.
+  for (const [id, cached] of Object.entries(cache.orders)) {
+    if (cached.status !== "pending_payment") continue;
+    if (serverById.has(id)) continue;
+    const expired = now >= cached.expiresAt;
+    cache.orders[id] = { ...cached, status: expired ? "expired" : "active", resolvedAt: now };
+  }
+
+  // Drop old resolved notices and anything the user dismissed already
+  // (dismissal deletes the entry outright, so nothing to do here for that).
+  for (const [id, cached] of Object.entries(cache.orders)) {
+    if (cached.resolvedAt && now - cached.resolvedAt > RESOLVED_RETENTION_MS) {
+      delete cache.orders[id];
+    }
+  }
+
+  saveOrderCache(cache);
+  renderPendingOrders();
+}
+
+function dismissOrder(orderId) {
+  const cache = loadOrderCache();
+  delete cache.orders[orderId];
+  saveOrderCache(cache);
+  renderPendingOrders();
+}
+
+function startOrderPolling() {
+  stopOrderPolling();
+  refreshOrders();
+  state.pollTimer = setInterval(refreshOrders, POLL_INTERVAL_MS);
+  state.tickTimer = setInterval(renderCountdownsOnly, 1000);
+}
+function stopOrderPolling() {
+  if (state.pollTimer) clearInterval(state.pollTimer);
+  if (state.tickTimer) clearInterval(state.tickTimer);
+  state.pollTimer = null;
+  state.tickTimer = null;
+}
+
+// ---------------------------------------------------------------------
 // Routing / view rendering
 // ---------------------------------------------------------------------
 
 function render(viewName) {
   // The URL never changes — this is a single-page app that only ever
-  // lives at one address. View state is tracked purely in memory.
+  // lives at one address. Which view is showing is tracked in memory
+  // and mirrored to localStorage purely so a refresh can restore it.
+  stopOrderPolling();
   $app.innerHTML = "";
   const tpl = document.getElementById(`tpl-${viewName}`);
   $app.appendChild(tpl.content.cloneNode(true));
 
   document.querySelectorAll(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === viewName));
 
+  if (viewName !== "login") {
+    try { localStorage.setItem(VIEW_STORAGE_KEY, viewName); } catch { /* ignore */ }
+  }
+
   if (viewName === "login") wireLogin();
   if (viewName === "bounties") loadBounties();
-  if (viewName === "place-bounty") wirePlaceBounty();
+  if (viewName === "place-bounty") { wirePlaceBounty(); startOrderPolling(); }
   if (viewName === "admin") loadAdmin();
+  if (viewName === "log") loadLog();
 }
 
 function renderNav() {
@@ -53,8 +159,10 @@ function renderNav() {
     { id: "bounties", label: "Bounties" },
     { id: "place-bounty", label: "Place bounty" },
   ];
-  if (state.user && state.user.isAdmin) items.push({ id: "admin", label: "Admin" });
-
+  if (state.user && state.user.isAdmin) {
+    items.push({ id: "admin", label: "Admin" });
+    items.push({ id: "log", label: "Log" });
+  }
   for (const item of items) {
     const btn = document.createElement("button");
     btn.textContent = item.label;
@@ -62,10 +170,6 @@ function renderNav() {
     btn.addEventListener("click", () => render(item.id));
     $nav.appendChild(btn);
   }
-  const logout = document.createElement("button");
-  logout.textContent = "Logout";
-  logout.addEventListener("click", handleLogout);
-  $nav.appendChild(logout);
 }
 
 function updateChrome() {
@@ -102,7 +206,7 @@ function wireLogin() {
     }
     state.user = data.user;
     updateChrome();
-    render("bounties");
+    render(restoreViewOrDefault());
   });
 }
 
@@ -206,34 +310,88 @@ function wirePlaceBounty() {
       errorBox.hidden = false;
       return;
     }
-    showPendingOrder(data.order);
+
+    cacheNewOrder(data.order);
+    renderPendingOrders();
+    form.reset();
+    recalcCost();
   });
+
+  renderPendingOrders();
 }
 
-function showPendingOrder(order) {
-  const panel = document.getElementById("pending-order");
-  panel.hidden = false;
-  document.getElementById("pending-amount").textContent = order.xanaxRequired;
-  const link = document.getElementById("pending-receiver-link");
-  link.textContent = `${order.receiver.name} [${order.receiver.id}]`;
-  link.href = `https://www.torn.com/profiles.php?XID=${order.receiver.id}`;
+function renderPendingOrders() {
+  const listEl = document.getElementById("pending-order-list");
+  const totalBanner = document.getElementById("pending-total");
+  if (!listEl) return; // view has since changed
 
-  if (state.pollTimer) clearInterval(state.pollTimer);
-  const countdownEl = document.getElementById("pending-countdown");
+  const cache = loadOrderCache();
+  const entries = Object.values(cache.orders).sort((a, b) => a.firstSeenAt - b.firstSeenAt);
 
-  function tick() {
-    const remainingMs = order.expiresAt - Date.now();
-    if (remainingMs <= 0) {
-      countdownEl.textContent = "expired";
-      clearInterval(state.pollTimer);
-      return;
-    }
-    const mins = Math.floor(remainingMs / 60000);
-    const secs = Math.floor((remainingMs % 60000) / 1000);
-    countdownEl.textContent = `${mins}:${String(secs).padStart(2, "0")}`;
+  const totalDue = entries
+    .filter((o) => o.status === "pending_payment")
+    .reduce((sum, o) => sum + Math.max(0, o.xanaxRequired - o.xanaxReceived), 0);
+
+  if (totalDue > 0 && cache.receiver) {
+    totalBanner.hidden = false;
+    document.getElementById("pending-total-amount").textContent = totalDue;
+    const link = document.getElementById("pending-total-receiver-link");
+    link.textContent = `${cache.receiver.name} [${cache.receiver.id}]`;
+    link.href = `https://www.torn.com/profiles.php?XID=${cache.receiver.id}`;
+  } else {
+    totalBanner.hidden = true;
   }
-  tick();
-  state.pollTimer = setInterval(tick, 1000);
+
+  listEl.innerHTML = "";
+  for (const order of entries) listEl.appendChild(buildPendingOrderCard(order));
+}
+
+function buildPendingOrderCard(order) {
+  const tpl = document.getElementById("tpl-pending-order-card");
+  const node = tpl.content.cloneNode(true);
+  const article = node.querySelector("[data-status]");
+  article.dataset.status = order.status;
+  article.dataset.orderId = order.id;
+
+  node.querySelector("[data-target]").textContent =
+    `${order.targetUserName} [${order.targetUserID}] — Level ${order.bountyLevel} × ${order.quantity}`;
+
+  const remaining = Math.max(0, order.xanaxRequired - order.xanaxReceived);
+  const body = node.querySelector("[data-body]");
+  if (order.status === "pending_payment") {
+    body.textContent = order.xanaxReceived > 0
+      ? `${remaining} Xanax still needed (${order.xanaxReceived} of ${order.xanaxRequired} received).`
+      : `${order.xanaxRequired} Xanax needed with the message "bounty".`;
+    const countdown = node.querySelector("[data-countdown]");
+    countdown.hidden = false;
+    countdown.dataset.expiresAt = order.expiresAt;
+    countdown.textContent = formatCountdown(order.expiresAt);
+  } else if (order.status === "active") {
+    body.textContent = "Payment confirmed — this bounty is now live on the board.";
+  } else if (order.status === "expired") {
+    body.textContent = order.xanaxReceived > 0
+      ? `Payment window expired with only ${order.xanaxReceived} of ${order.xanaxRequired} Xanax received.`
+      : "Payment window expired — no payment was received.";
+    node.querySelector("[data-hint]").hidden = order.xanaxReceived === 0;
+  }
+
+  node.querySelector('[data-action="dismiss"]').addEventListener("click", () => dismissOrder(order.id));
+  return node;
+}
+
+function formatCountdown(expiresAt) {
+  const remainingMs = expiresAt - Date.now();
+  if (remainingMs <= 0) return "expired";
+  const mins = Math.floor(remainingMs / 60000);
+  const secs = Math.floor((remainingMs % 60000) / 1000);
+  return `${mins}:${String(secs).padStart(2, "0")} remaining`;
+}
+
+/** Ticks every second without hitting the API — just re-renders the countdown text. */
+function renderCountdownsOnly() {
+  document.querySelectorAll("[data-countdown][data-expires-at]").forEach((el) => {
+    el.textContent = formatCountdown(Number(el.dataset.expiresAt));
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -294,20 +452,62 @@ function buildClaimantCard(claimant) {
 }
 
 // ---------------------------------------------------------------------
+// Admin log
+// ---------------------------------------------------------------------
+
+async function loadLog() {
+  const list = document.getElementById("log-list");
+  list.innerHTML = "<p class=\"empty-state\">Loading…</p>";
+  const { data } = await api("/api/admin/log");
+  if (!data.success) {
+    list.innerHTML = `<p class="empty-state">${escapeHtml(data.message || "Could not load the log.")}</p>`;
+    return;
+  }
+  if (data.entries.length === 0) {
+    list.innerHTML = "<p class=\"empty-state\">Nothing recorded yet.</p>";
+    return;
+  }
+  list.innerHTML = "";
+  for (const entry of data.entries) list.appendChild(buildLogRow(entry));
+}
+
+function buildLogRow(entry) {
+  const row = document.createElement("div");
+  row.className = "log-row";
+  const time = entry.time ? new Date(entry.time).toLocaleString() : "unknown time";
+  const details = Object.entries(entry)
+    .filter(([k]) => k !== "type" && k !== "time")
+    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`)
+    .join("  ");
+  row.innerHTML = `<span class="log-time">${escapeHtml(time)}</span><span class="log-type">${escapeHtml(entry.type || "EVENT")}</span>${escapeHtml(details)}`;
+  return row;
+}
+
+// ---------------------------------------------------------------------
 
 function escapeHtml(str) {
   const div = document.createElement("div");
-  div.textContent = str;
+  div.textContent = String(str);
   return div.innerHTML;
+}
+
+function restoreViewOrDefault() {
+  let stored;
+  try { stored = localStorage.getItem(VIEW_STORAGE_KEY); } catch { stored = null; }
+  if (!stored || !VALID_VIEWS.has(stored)) return "bounties";
+  if (ADMIN_ONLY_VIEWS.has(stored) && !(state.user && state.user.isAdmin)) return "bounties";
+  return stored;
 }
 
 // ---------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------
 
+document.getElementById("logout-btn").addEventListener("click", handleLogout);
+
 (async function boot() {
   const { data } = await api("/api/me");
   state.user = data.user || null;
   updateChrome();
-  render(state.user ? "bounties" : "login");
+  render(state.user ? restoreViewOrDefault() : "login");
 })();

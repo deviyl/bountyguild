@@ -59,15 +59,18 @@
 
 <template id="tpl-bounty-card">
   <article class="bounty-card">
-    <div class="bounty-card-level" data-level></div>
-    <div class="bounty-card-body">
-      <div class="bounty-target">
-        <span class="target-name" data-target-name></span>
-        <span class="mono target-id" data-target-id></span>
+    <div class="bounty-card-top">
+      <div class="bounty-card-level" data-level></div>
+      <div class="bounty-card-body">
+        <div class="bounty-target">
+          <span class="target-name" data-target-name></span>
+          <span class="mono target-id" data-target-id></span>
+        </div>
+        <div class="bounty-reward mono" data-reward></div>
       </div>
-      <div class="bounty-reward mono" data-reward></div>
+      <button class="btn btn-claim" data-action="claim">Claim bounty</button>
     </div>
-    <button class="btn btn-claim" data-action="claim">Claim bounty</button>
+    <p class="bounty-requirement" data-requirement></p>
     <div class="bounty-status" data-status hidden></div>
   </article>
 </template>

@@ -15,6 +15,7 @@
   <div class="brand">Bounty Guild</div>
   <nav id="nav" class="nav"></nav>
   <div class="identity" id="identity"></div>
+  <button id="logout-btn" class="btn btn-logout">Logout</button>
 </header>
 
 <main id="app" class="app"></main>
@@ -104,17 +105,25 @@
       <button type="submit" class="btn btn-primary">Place bounty</button>
     </form>
 
-    <section id="pending-order" class="panel pending-order" hidden>
-      <h3>Payment pending</h3>
-      <p>
-        Send <strong class="mono" id="pending-amount"></strong> Xanax to
-        <a id="pending-receiver-link" target="_blank" rel="noopener" class="ext-link"></a>
-        with the message <strong class="mono">bounty</strong>.
-      </p>
-      <p class="countdown">Time remaining: <span class="mono" id="pending-countdown"></span></p>
-      <p class="hint">Sent less than the full amount and the window closed? You'll need to request a refund from an admin — partial payments are not returned automatically.</p>
+    <section id="pending-orders" class="pending-orders">
+      <div class="pending-total" id="pending-total" hidden>
+        Send <strong class="mono" id="pending-total-amount"></strong> Xanax total to
+        <a id="pending-total-receiver-link" target="_blank" rel="noopener" class="ext-link"></a>
+        with the message <strong class="mono">bounty</strong> to cover everything below in one shot.
+      </div>
+      <div id="pending-order-list" class="stack"></div>
     </section>
   </section>
+</template>
+
+<template id="tpl-pending-order-card">
+  <article class="panel pending-order" data-status>
+    <button class="dismiss-btn" data-action="dismiss" title="Dismiss" aria-label="Dismiss">&times;</button>
+    <h3 data-target></h3>
+    <p data-body></p>
+    <p class="countdown" data-countdown hidden></p>
+    <p class="hint" data-hint hidden>Sent less than the full amount and the window closed? You'll need to request a refund from an admin — partial payments are not returned automatically.</p>
+  </article>
 </template>
 
 <template id="tpl-admin">
@@ -139,6 +148,16 @@
     </table>
     <button class="btn btn-secondary" data-action="mark-paid">Mark all as paid</button>
   </article>
+</template>
+
+<template id="tpl-log">
+  <section class="view">
+    <div class="view-head">
+      <h2>Activity log</h2>
+      <p class="view-sub">Every recorded event, newest first.</p>
+    </div>
+    <div id="log-list" class="log-list"></div>
+  </section>
 </template>
 
 <script src="script.js"></script>

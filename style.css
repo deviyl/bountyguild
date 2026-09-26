@@ -74,6 +74,15 @@ html, body {
   color: var(--text-dim);
   white-space: nowrap;
 }
+.btn-logout {
+  margin-left: 8px;
+  background: transparent;
+  border: 1px solid var(--blood);
+  color: var(--blood-bright);
+  font-size: 13px;
+  padding: 6px 14px;
+}
+.btn-logout:hover { background: var(--blood); color: #fff; }
 
 /* ---------- layout ---------- */
 .app {
@@ -194,10 +203,39 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 
 /* ---------- place bounty ---------- */
 .cost-line { font-size: 15px; }
-.pending-order { margin-top: 20px; border-left: 4px solid var(--gold); }
-.pending-order h3 { margin-top: 0; font-family: var(--font-display); font-size: 20px; }
+.pending-orders { margin-top: 24px; }
+.pending-total {
+  background: var(--panel-raised);
+  border: 1px solid var(--gold);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.pending-order {
+  position: relative;
+  border-left: 4px solid var(--gold);
+  padding-right: 40px;
+}
+.pending-order[data-status="expired"] { border-left-color: var(--text-dim); opacity: 0.75; }
+.pending-order[data-status="active"] { border-left-color: #6fae66; }
+.pending-order h3 { margin: 0 0 6px; font-family: var(--font-display); font-size: 20px; }
+.pending-order p { margin: 4px 0; }
 .countdown { color: var(--gold); }
 .hint { color: var(--text-dim); font-size: 13px; }
+.dismiss-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.dismiss-btn:hover { color: var(--text); }
 
 /* ---------- admin ---------- */
 .claimant-card { margin-bottom: 12px; }
@@ -213,6 +251,26 @@ fieldset.field { border: none; padding: 0; margin: 0; }
   font-size: 14px;
 }
 .claimant-table th { color: var(--text-dim); font-weight: 500; }
+
+/* ---------- log ---------- */
+.log-list {
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.log-row {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log-row:last-child { border-bottom: none; }
+.log-time { color: var(--text-dim); margin-right: 10px; }
+.log-type { color: var(--gold); margin-right: 10px; }
 
 @media (max-width: 560px) {
   .topbar { flex-wrap: wrap; gap: 10px; }

@@ -1,12 +1,7 @@
-// Bounty Guild frontend. Deployed on GitHub Pages, calling out to the
-// Cloudflare Worker as a separate API origin (credentials: "include" so
-// the session cookie rides along cross-site). Holds no secrets — the
-// session lives in an HttpOnly cookie this script can never read.
-
 const API_BASE = "https://bountyguild.deviyl.workers.dev";
 const VIEW_STORAGE_KEY = "bg_current_view";
 const ORDERS_CACHE_KEY = "bg_orders_cache_v1";
-const RESOLVED_RETENTION_MS = 60 * 60 * 1000; // keep "paid"/"expired" notices visible for 1 hour
+const RESOLVED_RETENTION_MS = 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
 const state = { user: null, pollTimer: null, tickTimer: null };
@@ -34,12 +29,6 @@ function fmtMoney(n) {
   return "$" + Number(n).toLocaleString("en-US");
 }
 
-// ---------------------------------------------------------------------
-// Local order cache — this is what lets pending/expired/paid notices
-// survive a refresh or a navigation away, even after the server has
-// removed the underlying order once it resolves.
-// ---------------------------------------------------------------------
-
 function loadOrderCache() {
   try {
     const raw = localStorage.getItem(ORDERS_CACHE_KEY);
@@ -51,7 +40,7 @@ function loadOrderCache() {
   }
 }
 function saveOrderCache(cache) {
-  try { localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(cache)); } catch { /* storage unavailable, ignore */ }
+  try { localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(cache)); } catch { }
 }
 
 function cacheNewOrder(order) {
@@ -63,7 +52,6 @@ function cacheNewOrder(order) {
   return cache;
 }
 
-/** Reconcile the local cache against the server's list of still-open orders. */
 async function refreshOrders() {
   const { data } = await api("/api/orders/mine");
   if (!data.success) return;
@@ -75,7 +63,6 @@ async function refreshOrders() {
   const serverById = new Map(data.orders.map((o) => [o.id, o]));
   const now = Date.now();
 
-  // Update/insert everything the server still knows about.
   for (const order of data.orders) {
     const existing = cache.orders[order.id];
     cache.orders[order.id] = {
@@ -85,9 +72,6 @@ async function refreshOrders() {
     };
   }
 
-  // Anything we were tracking as pending that the server no longer has
-  // must have resolved (paid -> activated, or expired) and been cleaned
-  // up server-side. Infer which, based on the window we already knew.
   for (const [id, cached] of Object.entries(cache.orders)) {
     if (cached.status !== "pending_payment") continue;
     if (serverById.has(id)) continue;
@@ -95,8 +79,6 @@ async function refreshOrders() {
     cache.orders[id] = { ...cached, status: expired ? "expired" : "active", resolvedAt: now };
   }
 
-  // Drop old resolved notices and anything the user dismissed already
-  // (dismissal deletes the entry outright, so nothing to do here for that).
   for (const [id, cached] of Object.entries(cache.orders)) {
     if (cached.resolvedAt && now - cached.resolvedAt > RESOLVED_RETENTION_MS) {
       delete cache.orders[id];
@@ -127,14 +109,7 @@ function stopOrderPolling() {
   state.tickTimer = null;
 }
 
-// ---------------------------------------------------------------------
-// Routing / view rendering
-// ---------------------------------------------------------------------
-
 function render(viewName) {
-  // The URL never changes — this is a single-page app that only ever
-  // lives at one address. Which view is showing is tracked in memory
-  // and mirrored to localStorage purely so a refresh can restore it.
   stopOrderPolling();
   $app.innerHTML = "";
   const tpl = document.getElementById(`tpl-${viewName}`);
@@ -143,7 +118,7 @@ function render(viewName) {
   document.querySelectorAll(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === viewName));
 
   if (viewName !== "login") {
-    try { localStorage.setItem(VIEW_STORAGE_KEY, viewName); } catch { /* ignore */ }
+    try { localStorage.setItem(VIEW_STORAGE_KEY, viewName); } catch { }
   }
 
   if (viewName === "login") wireLogin();
@@ -184,10 +159,6 @@ function updateChrome() {
   }
 }
 
-// ---------------------------------------------------------------------
-// Login
-// ---------------------------------------------------------------------
-
 function wireLogin() {
   const form = document.getElementById("login-form");
   const errorBox = document.getElementById("login-error");
@@ -217,10 +188,6 @@ async function handleLogout() {
   render("login");
 }
 
-// ---------------------------------------------------------------------
-// Bounties
-// ---------------------------------------------------------------------
-
 async function loadBounties() {
   const list = document.getElementById("bounty-list");
   list.innerHTML = "<p class=\"empty-state\">Loading bounties…</p>";
@@ -244,6 +211,7 @@ function buildBountyCard(bounty) {
   node.querySelector("[data-target-name]").textContent = bounty.targetUserName;
   node.querySelector("[data-target-id]").textContent = `[${bounty.targetUserID}]`;
   node.querySelector("[data-reward]").textContent = fmtMoney(bounty.payoutAmount);
+  node.querySelector("[data-requirement]").innerHTML = buildRequirementHtml(bounty.bountyLevel, bounty.targetUserName);
 
   const claimBtn = node.querySelector('[data-action="claim"]');
   const statusEl = node.querySelector("[data-status]");
@@ -274,9 +242,16 @@ function buildBountyCard(bounty) {
   return node;
 }
 
-// ---------------------------------------------------------------------
-// Place bounty
-// ---------------------------------------------------------------------
+function buildRequirementHtml(level, targetName) {
+  const name = escapeHtml(targetName);
+  if (level === 1) {
+    return `Claim this bounty <u>after</u> you have <strong>hospitalized</strong> ${name}.`;
+  }
+  if (level === 2) {
+    return `Claim this bounty <u>after</u> you have <strong>hospitalized</strong> ${name} with EITHER <strong>stricken</strong> OR <strong>10/10 merits</strong>.`;
+  }
+  return `Claim this bounty <u>after</u> you have <strong>hospitalized</strong> ${name} with BOTH <strong>stricken</strong> AND <strong>10/10 merits</strong>.`;
+}
 
 function wirePlaceBounty() {
   const form = document.getElementById("place-form");
@@ -323,7 +298,7 @@ function wirePlaceBounty() {
 function renderPendingOrders() {
   const listEl = document.getElementById("pending-order-list");
   const totalBanner = document.getElementById("pending-total");
-  if (!listEl) return; // view has since changed
+  if (!listEl) return;
 
   const cache = loadOrderCache();
   const entries = Object.values(cache.orders).sort((a, b) => a.firstSeenAt - b.firstSeenAt);
@@ -387,16 +362,11 @@ function formatCountdown(expiresAt) {
   return `${mins}:${String(secs).padStart(2, "0")} remaining`;
 }
 
-/** Ticks every second without hitting the API — just re-renders the countdown text. */
 function renderCountdownsOnly() {
   document.querySelectorAll("[data-countdown][data-expires-at]").forEach((el) => {
     el.textContent = formatCountdown(Number(el.dataset.expiresAt));
   });
 }
-
-// ---------------------------------------------------------------------
-// Admin
-// ---------------------------------------------------------------------
 
 async function loadAdmin() {
   const list = document.getElementById("admin-list");
@@ -451,10 +421,6 @@ function buildClaimantCard(claimant) {
   return node;
 }
 
-// ---------------------------------------------------------------------
-// Admin log
-// ---------------------------------------------------------------------
-
 async function loadLog() {
   const list = document.getElementById("log-list");
   list.innerHTML = "<p class=\"empty-state\">Loading…</p>";
@@ -483,8 +449,6 @@ function buildLogRow(entry) {
   return row;
 }
 
-// ---------------------------------------------------------------------
-
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = String(str);
@@ -498,10 +462,6 @@ function restoreViewOrDefault() {
   if (ADMIN_ONLY_VIEWS.has(stored) && !(state.user && state.user.isAdmin)) return "bounties";
   return stored;
 }
-
-// ---------------------------------------------------------------------
-// Boot
-// ---------------------------------------------------------------------
 
 document.getElementById("logout-btn").addEventListener("click", handleLogout);
 

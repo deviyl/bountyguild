@@ -30,7 +30,6 @@ html, body {
 .hidden { display: none !important; }
 .mono { font-family: var(--font-mono); }
 
-/* ---------- top bar ---------- */
 .topbar {
   position: sticky;
   top: 0;
@@ -84,7 +83,6 @@ html, body {
 }
 .btn-logout:hover { background: var(--blood); color: #fff; }
 
-/* ---------- layout ---------- */
 .app {
   max-width: 720px;
   margin: 0 auto;
@@ -105,7 +103,6 @@ html, body {
   padding: 24px;
 }
 
-/* ---------- login ---------- */
 .login-panel { max-width: 440px; margin: 60px auto 0; }
 .wordmark {
   font-family: var(--font-display);
@@ -172,7 +169,6 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 .ext-link { color: var(--gold); text-decoration: none; }
 .ext-link:hover { text-decoration: underline; }
 
-/* ---------- bounty cards ---------- */
 .bounty-grid { display: flex; flex-direction: column; gap: 12px; }
 .bounty-card {
   position: relative;
@@ -180,6 +176,11 @@ fieldset.field { border: none; padding: 0; margin: 0; }
   border: 1px solid var(--line);
   border-left: 4px solid var(--blood);
   padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bounty-card-top {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -197,11 +198,20 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 .target-name { font-weight: 600; }
 .target-id { color: var(--text-dim); font-size: 13px; }
 .bounty-reward { color: var(--gold); font-size: 15px; margin-top: 2px; }
+.bounty-requirement {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.bounty-requirement strong { color: var(--text); font-weight: 600; }
+.bounty-requirement u { text-decoration-color: var(--gold); }
 .bounty-status { font-size: 13px; color: var(--text-dim); }
 
 .empty-state { color: var(--text-dim); padding: 24px 0; }
 
-/* ---------- place bounty ---------- */
 .cost-line { font-size: 15px; }
 .pending-orders { margin-top: 24px; }
 .pending-total {
@@ -237,7 +247,6 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 }
 .dismiss-btn:hover { color: var(--text); }
 
-/* ---------- admin ---------- */
 .claimant-card { margin-bottom: 12px; }
 .claimant-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
 .claimant-name { color: var(--text); text-decoration: none; font-weight: 600; }
@@ -252,7 +261,6 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 }
 .claimant-table th { color: var(--text-dim); font-weight: 500; }
 
-/* ---------- log ---------- */
 .log-list {
   max-height: 70vh;
   overflow-y: auto;

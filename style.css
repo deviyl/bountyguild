@@ -194,7 +194,8 @@ fieldset.field { border: none; padding: 0; margin: 0; }
   text-align: center;
 }
 .bounty-card-body { flex: 1; min-width: 0; }
-.bounty-target { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.bounty-target { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; text-decoration: none; color: inherit; width: fit-content; }
+.bounty-target:hover .target-name { color: var(--gold); text-decoration: underline; }
 .target-name { font-weight: 600; }
 .target-id { color: var(--text-dim); font-size: 13px; }
 .bounty-reward { color: var(--gold); font-size: 15px; margin-top: 2px; }
@@ -246,6 +247,22 @@ fieldset.field { border: none; padding: 0; margin: 0; }
   padding: 4px 8px;
 }
 .dismiss-btn:hover { color: var(--text); }
+
+.payout-lock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  border-left: 4px solid var(--line);
+  font-size: 14px;
+}
+.payout-lock-bar[data-state="free"] { border-left-color: #6fae66; }
+.payout-lock-bar[data-state="mine"] { border-left-color: var(--gold); }
+.payout-lock-bar[data-state="other"] { border-left-color: var(--blood); }
+.btn-lock-on { background: var(--gold); color: #26200f; }
+.btn-lock-off { background: transparent; border: 1px solid var(--blood); color: var(--blood-bright); }
+.btn-lock-off:hover { background: var(--blood); color: #fff; }
 
 .claimant-card { margin-bottom: 12px; }
 .claimant-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }

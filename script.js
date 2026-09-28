@@ -3,8 +3,9 @@ const VIEW_STORAGE_KEY = "bg_current_view";
 const ORDERS_CACHE_KEY = "bg_orders_cache_v1";
 const RESOLVED_RETENTION_MS = 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
+const PAYOUT_LOCK_POLL_MS = 3000;
 
-const state = { user: null, pollTimer: null, tickTimer: null };
+const state = { user: null, pollTimer: null, tickTimer: null, lockPollTimer: null };
 
 const $app = document.getElementById("app");
 const $topbar = document.getElementById("topbar");
@@ -111,6 +112,7 @@ function stopOrderPolling() {
 
 function render(viewName) {
   stopOrderPolling();
+  stopLockPolling();
   $app.innerHTML = "";
   const tpl = document.getElementById(`tpl-${viewName}`);
   $app.appendChild(tpl.content.cloneNode(true));
@@ -124,7 +126,7 @@ function render(viewName) {
   if (viewName === "login") wireLogin();
   if (viewName === "bounties") loadBounties();
   if (viewName === "place-bounty") { wirePlaceBounty(); startOrderPolling(); }
-  if (viewName === "admin") loadAdmin();
+  if (viewName === "admin") { loadAdmin(); wirePayoutLockToggle(); startLockPolling(); }
   if (viewName === "log") loadLog();
 }
 
@@ -210,6 +212,7 @@ function buildBountyCard(bounty) {
   node.querySelector("[data-level]").textContent = `L${bounty.bountyLevel}`;
   node.querySelector("[data-target-name]").textContent = bounty.targetUserName;
   node.querySelector("[data-target-id]").textContent = `[${bounty.targetUserID}]`;
+  node.querySelector("[data-target-link]").href = `https://www.torn.com/profiles.php?XID=${bounty.targetUserID}`;
   node.querySelector("[data-reward]").textContent = fmtMoney(bounty.payoutAmount);
   node.querySelector("[data-requirement]").innerHTML = buildRequirementHtml(bounty.bountyLevel, bounty.targetUserName);
 
@@ -382,6 +385,67 @@ async function loadAdmin() {
   }
   list.innerHTML = "";
   for (const claimant of data.claimants) list.appendChild(buildClaimantCard(claimant));
+}
+
+function startLockPolling() {
+  stopLockPolling();
+  refreshPayoutLock();
+  state.lockPollTimer = setInterval(refreshPayoutLock, PAYOUT_LOCK_POLL_MS);
+}
+function stopLockPolling() {
+  if (state.lockPollTimer) clearInterval(state.lockPollTimer);
+  state.lockPollTimer = null;
+}
+
+async function refreshPayoutLock() {
+  if (!document.getElementById("payout-lock-bar")) return;
+  const { data } = await api("/api/admin/payout-lock");
+  if (!data.success) return;
+  renderPayoutLock(data.lock);
+}
+
+function renderPayoutLock(lock) {
+  const bar = document.getElementById("payout-lock-bar");
+  if (!bar) return;
+  const statusEl = document.getElementById("payout-lock-status");
+  const toggleBtn = document.getElementById("payout-lock-toggle");
+
+  if (!lock) {
+    bar.dataset.state = "free";
+    statusEl.textContent = "No one is currently sending payouts.";
+    toggleBtn.textContent = "Start sending payouts";
+    toggleBtn.className = "btn btn-lock-on";
+    toggleBtn.disabled = false;
+    toggleBtn.dataset.nextActive = "true";
+  } else if (state.user && lock.adminUserID === state.user.id) {
+    bar.dataset.state = "mine";
+    statusEl.textContent = `You are currently sending payouts (since ${new Date(lock.since).toLocaleTimeString()}).`;
+    toggleBtn.textContent = "I'm done — stop";
+    toggleBtn.className = "btn btn-lock-off";
+    toggleBtn.disabled = false;
+    toggleBtn.dataset.nextActive = "false";
+  } else {
+    bar.dataset.state = "other";
+    statusEl.textContent = `${lock.adminUserName} is currently sending payouts (since ${new Date(lock.since).toLocaleTimeString()}).`;
+    toggleBtn.textContent = "Payouts in progress";
+    toggleBtn.className = "btn";
+    toggleBtn.disabled = true;
+  }
+}
+
+function wirePayoutLockToggle() {
+  const toggleBtn = document.getElementById("payout-lock-toggle");
+  toggleBtn.addEventListener("click", async () => {
+    const nextActive = toggleBtn.dataset.nextActive === "true";
+    toggleBtn.disabled = true;
+    const { data } = await api("/api/admin/payout-lock", { method: "POST", body: JSON.stringify({ active: nextActive }) });
+    if (data.success) {
+      renderPayoutLock(data.lock);
+    } else {
+      toggleBtn.disabled = false;
+      alert(data.message || "Could not update payout status.");
+    }
+  });
 }
 
 function buildClaimantCard(claimant) {

@@ -62,10 +62,10 @@
     <div class="bounty-card-top">
       <div class="bounty-card-level" data-level></div>
       <div class="bounty-card-body">
-        <div class="bounty-target">
+        <a class="bounty-target" data-target-link target="_blank" rel="noopener">
           <span class="target-name" data-target-name></span>
           <span class="mono target-id" data-target-id></span>
-        </div>
+        </a>
         <div class="bounty-reward mono" data-reward></div>
       </div>
       <button class="btn btn-claim" data-action="claim">Claim bounty</button>
@@ -134,6 +134,10 @@
     <div class="view-head">
       <h2>Outstanding payouts</h2>
       <p class="view-sub">Grouped by the claimant who is owed money. Bounty placers are never shown here.</p>
+    </div>
+    <div class="panel payout-lock-bar" id="payout-lock-bar">
+      <span id="payout-lock-status">Checking payout status…</span>
+      <button class="btn" id="payout-lock-toggle" disabled>—</button>
     </div>
     <div id="admin-list" class="stack"></div>
   </section>

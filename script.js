@@ -433,6 +433,51 @@ function renderPayoutLock(lock) {
   }
 }
 
+function showModal({ title, body, withReason = false, confirmLabel = "Confirm", showCancel = true }) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("modal-overlay");
+    const titleEl = document.getElementById("modal-title");
+    const bodyEl = document.getElementById("modal-body");
+    const reasonField = document.getElementById("modal-reason-field");
+    const reasonInput = document.getElementById("modal-reason-input");
+    const confirmBtn = document.getElementById("modal-confirm");
+    const cancelBtn = document.getElementById("modal-cancel");
+
+    titleEl.textContent = title;
+    bodyEl.textContent = body;
+    reasonField.hidden = !withReason;
+    reasonInput.value = "";
+    confirmBtn.textContent = confirmLabel;
+    cancelBtn.hidden = !showCancel;
+    overlay.classList.remove("hidden");
+
+    function cleanup(result) {
+      overlay.classList.add("hidden");
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onOverlayClick);
+      resolve(result);
+    }
+    function onConfirm() {
+      cleanup({ confirmed: true, reason: reasonInput.value.trim() });
+    }
+    function onCancel() {
+      cleanup({ confirmed: false, reason: "" });
+    }
+    function onOverlayClick(e) {
+      if (e.target === overlay) onCancel();
+    }
+
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    overlay.addEventListener("click", onOverlayClick);
+  });
+}
+
+function showAlert(message, title = "Notice") {
+  return showModal({ title, body: message, showCancel: false, confirmLabel: "OK" });
+}
+
 function wirePayoutLockToggle() {
   const toggleBtn = document.getElementById("payout-lock-toggle");
   toggleBtn.addEventListener("click", async () => {
@@ -443,7 +488,7 @@ function wirePayoutLockToggle() {
       renderPayoutLock(data.lock);
     } else {
       toggleBtn.disabled = false;
-      alert(data.message || "Could not update payout status.");
+      await showAlert(data.message || "Could not update payout status.");
     }
   });
 }
@@ -469,15 +514,20 @@ function buildClaimantCard(claimant) {
 
   const markPaidBtn = node.querySelector('[data-action="mark-paid"]');
   markPaidBtn.addEventListener("click", async () => {
-    if (!confirm(`Mark ${claimant.bounties.length} bounty payout(s) for ${claimant.claimantUserName} as paid? This cannot be undone automatically.`)) return;
-    const reason = prompt("Reason / note for the audit log (optional):") || "";
+    const result = await showModal({
+      title: "Confirm payout",
+      body: `Mark ${claimant.bounties.length} bounty payout(s) for ${claimant.claimantUserName} as paid? This cannot be undone automatically.`,
+      withReason: true,
+      confirmLabel: "Mark as paid",
+    });
+    if (!result.confirmed) return;
     markPaidBtn.disabled = true;
     const bountyIds = claimant.bounties.map((b) => b.id);
-    const { data } = await api("/api/admin/mark-paid", { method: "POST", body: JSON.stringify({ bountyIds, reason }) });
+    const { data } = await api("/api/admin/mark-paid", { method: "POST", body: JSON.stringify({ bountyIds, reason: result.reason }) });
     if (data.success) {
       loadAdmin();
     } else {
-      alert(data.message || "Could not mark as paid.");
+      await showAlert(data.message || "Could not mark as paid.");
       markPaidBtn.disabled = false;
     }
   });

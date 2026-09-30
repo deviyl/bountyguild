@@ -124,11 +124,7 @@
     </form>
 
     <section id="pending-orders" class="pending-orders">
-      <div class="pending-total" id="pending-total" hidden>
-        Send <strong class="mono" id="pending-total-amount"></strong> Xanax total to
-        <a id="pending-total-receiver-link" target="_blank" rel="noopener" class="ext-link"></a>
-        with the message <strong class="mono">bounty</strong> to cover everything below in one shot.
-      </div>
+      <div id="pending-total-list" class="stack"></div>
       <div id="pending-order-list" class="stack"></div>
     </section>
   </section>
@@ -165,7 +161,7 @@
       <span class="mono claimant-total" data-total></span>
     </div>
     <table class="claimant-table">
-      <thead><tr><th>Target</th><th>Level</th><th>Reward</th><th></th></tr></thead>
+      <thead><tr><th>Target</th><th>Level</th><th>Reward</th><th>Assigned</th></tr></thead>
       <tbody data-rows></tbody>
     </table>
     <button class="btn btn-secondary" data-action="mark-paid">Mark all as paid</button>
@@ -180,6 +176,34 @@
     </div>
     <div id="log-list" class="log-list"></div>
   </section>
+</template>
+
+<template id="tpl-payout-ledger">
+  <section class="view">
+    <div class="view-head">
+      <h2>Payout ledger</h2>
+      <p class="view-sub">Running totals used to spread incoming items and outgoing payouts across admins. Everyone can see who's paused; you can only pause or unpause yourself.</p>
+    </div>
+    <div id="ledger-admin-list" class="stack"></div>
+    <div class="ledger-columns">
+      <div class="ledger-column">
+        <h3>Items received — least to most</h3>
+        <table class="ledger-table"><tbody id="ledger-received-rows"></tbody></table>
+      </div>
+      <div class="ledger-column">
+        <h3>Paid out — least to most</h3>
+        <table class="ledger-table"><tbody id="ledger-paid-rows"></tbody></table>
+      </div>
+    </div>
+  </section>
+</template>
+
+<template id="tpl-ledger-admin-row">
+  <div class="panel ledger-admin-row">
+    <span class="ledger-admin-name" data-name></span>
+    <span class="ledger-admin-status" data-status-text></span>
+    <button class="btn btn-secondary" data-action="toggle-pause" hidden></button>
+  </div>
 </template>
 
 <script src="script.js"></script>

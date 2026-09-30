@@ -13,8 +13,8 @@ const $nav = document.getElementById("nav");
 const $identity = document.getElementById("identity");
 
 const BOUNTY_COSTS = { 1: 4, 2: 6, 3: 8 };
-const ADMIN_ONLY_VIEWS = new Set(["admin", "log"]);
-const VALID_VIEWS = new Set(["bounties", "place-bounty", "admin", "log"]);
+const ADMIN_ONLY_VIEWS = new Set(["admin", "log", "payout-ledger"]);
+const VALID_VIEWS = new Set(["bounties", "place-bounty", "admin", "log", "payout-ledger"]);
 
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -33,11 +33,11 @@ function fmtMoney(n) {
 function loadOrderCache() {
   try {
     const raw = localStorage.getItem(ORDERS_CACHE_KEY);
-    if (!raw) return { orders: {}, receiver: null, message: "bounty" };
+    if (!raw) return { orders: {}, message: "bounty" };
     const parsed = JSON.parse(raw);
-    return { orders: parsed.orders || {}, receiver: parsed.receiver || null, message: parsed.message || "bounty" };
+    return { orders: parsed.orders || {}, message: parsed.message || "bounty" };
   } catch {
-    return { orders: {}, receiver: null, message: "bounty" };
+    return { orders: {}, message: "bounty" };
   }
 }
 function saveOrderCache(cache) {
@@ -46,7 +46,6 @@ function saveOrderCache(cache) {
 
 function cacheNewOrder(order) {
   const cache = loadOrderCache();
-  cache.receiver = order.receiver;
   cache.message = order.message;
   cache.orders[order.id] = { ...order, firstSeenAt: Date.now(), resolvedAt: null };
   saveOrderCache(cache);
@@ -58,7 +57,6 @@ async function refreshOrders() {
   if (!data.success) return;
 
   const cache = loadOrderCache();
-  cache.receiver = data.receiver;
   cache.message = data.message;
 
   const serverById = new Map(data.orders.map((o) => [o.id, o]));
@@ -128,6 +126,7 @@ function render(viewName) {
   if (viewName === "place-bounty") { wirePlaceBounty(); startOrderPolling(); }
   if (viewName === "admin") { loadAdmin(); wirePayoutLockToggle(); startLockPolling(); }
   if (viewName === "log") loadLog();
+  if (viewName === "payout-ledger") loadPayoutLedger();
 }
 
 function renderNav() {
@@ -138,6 +137,7 @@ function renderNav() {
   ];
   if (state.user && state.user.isAdmin) {
     items.push({ id: "admin", label: "Admin" });
+    items.push({ id: "payout-ledger", label: "Payout Ledger" });
     items.push({ id: "log", label: "Log" });
   }
   for (const item of items) {
@@ -300,24 +300,30 @@ function wirePlaceBounty() {
 
 function renderPendingOrders() {
   const listEl = document.getElementById("pending-order-list");
-  const totalBanner = document.getElementById("pending-total");
+  const totalListEl = document.getElementById("pending-total-list");
   if (!listEl) return;
 
   const cache = loadOrderCache();
   const entries = Object.values(cache.orders).sort((a, b) => a.firstSeenAt - b.firstSeenAt);
 
-  const totalDue = entries
-    .filter((o) => o.status === "pending_payment")
-    .reduce((sum, o) => sum + Math.max(0, o.xanaxRequired - o.xanaxReceived), 0);
+  const totalsByReceiver = new Map();
+  for (const o of entries) {
+    if (o.status !== "pending_payment" || !o.receiver) continue;
+    const remaining = Math.max(0, o.xanaxRequired - o.xanaxReceived);
+    if (remaining <= 0) continue;
+    const key = o.receiver.id;
+    if (!totalsByReceiver.has(key)) totalsByReceiver.set(key, { receiver: o.receiver, total: 0 });
+    totalsByReceiver.get(key).total += remaining;
+  }
 
-  if (totalDue > 0 && cache.receiver) {
-    totalBanner.hidden = false;
-    document.getElementById("pending-total-amount").textContent = totalDue;
-    const link = document.getElementById("pending-total-receiver-link");
-    link.textContent = `${cache.receiver.name} [${cache.receiver.id}]`;
-    link.href = `https://www.torn.com/profiles.php?XID=${cache.receiver.id}`;
-  } else {
-    totalBanner.hidden = true;
+  totalListEl.innerHTML = "";
+  for (const { receiver, total } of totalsByReceiver.values()) {
+    const banner = document.createElement("div");
+    banner.className = "pending-total";
+    banner.innerHTML = `Send <strong class="mono">${total}</strong> Xanax total to ` +
+      `<a href="https://www.torn.com/profiles.php?XID=${receiver.id}" target="_blank" rel="noopener" class="ext-link">${escapeHtml(receiver.name)} [${receiver.id}]</a> ` +
+      `with the message <strong class="mono">bounty</strong> to cover everything below assigned to them, in one shot.`;
+    totalListEl.appendChild(banner);
   }
 
   listEl.innerHTML = "";
@@ -337,9 +343,10 @@ function buildPendingOrderCard(order) {
   const remaining = Math.max(0, order.xanaxRequired - order.xanaxReceived);
   const body = node.querySelector("[data-body]");
   if (order.status === "pending_payment") {
+    const receiverText = order.receiver ? ` to ${order.receiver.name} [${order.receiver.id}]` : "";
     body.textContent = order.xanaxReceived > 0
-      ? `${remaining} Xanax still needed (${order.xanaxReceived} of ${order.xanaxRequired} received).`
-      : `${order.xanaxRequired} Xanax needed with the message "bounty".`;
+      ? `${remaining} Xanax still needed${receiverText} (${order.xanaxReceived} of ${order.xanaxRequired} received).`
+      : `${order.xanaxRequired} Xanax needed${receiverText} with the message "bounty".`;
     const countdown = node.querySelector("[data-countdown]");
     countdown.hidden = false;
     countdown.dataset.expiresAt = order.expiresAt;
@@ -508,7 +515,7 @@ function buildClaimantCard(claimant) {
       <td>${escapeHtml(b.targetUserName)} <span class="mono">[${b.targetUserID}]</span></td>
       <td>L${b.bountyLevel}</td>
       <td class="mono">${fmtMoney(b.payoutAmount)}</td>
-      <td></td>`;
+      <td>${escapeHtml(b.payoutAdminUserName || "Unassigned")}</td>`;
     rows.appendChild(tr);
   }
 
@@ -561,6 +568,63 @@ function buildLogRow(entry) {
     .join("  ");
   row.innerHTML = `<span class="log-time">${escapeHtml(time)}</span><span class="log-type">${escapeHtml(entry.type || "EVENT")}</span>${escapeHtml(details)}`;
   return row;
+}
+
+async function loadPayoutLedger() {
+  const adminListEl = document.getElementById("ledger-admin-list");
+  const receivedRows = document.getElementById("ledger-received-rows");
+  const paidRows = document.getElementById("ledger-paid-rows");
+  adminListEl.innerHTML = "<p class=\"empty-state\">Loading…</p>";
+  const { data } = await api("/api/admin/payout-ledger");
+  if (!data.success) {
+    adminListEl.innerHTML = `<p class="empty-state">${escapeHtml(data.message || "Could not load the ledger.")}</p>`;
+    return;
+  }
+
+  adminListEl.innerHTML = "";
+  for (const admin of data.admins) adminListEl.appendChild(buildLedgerAdminRow(admin));
+
+  const byReceived = [...data.admins].sort((a, b) => a.totalItemsReceived - b.totalItemsReceived);
+  const byPaid = [...data.admins].sort((a, b) => a.totalPaidOut - b.totalPaidOut);
+
+  receivedRows.innerHTML = "";
+  for (const admin of byReceived) receivedRows.appendChild(buildLedgerMetricRow(admin, `${admin.totalItemsReceived} Xanax`));
+
+  paidRows.innerHTML = "";
+  for (const admin of byPaid) paidRows.appendChild(buildLedgerMetricRow(admin, fmtMoney(admin.totalPaidOut)));
+}
+
+function buildLedgerAdminRow(admin) {
+  const tpl = document.getElementById("tpl-ledger-admin-row");
+  const node = tpl.content.cloneNode(true);
+  const row = node.querySelector(".ledger-admin-row");
+  row.dataset.paused = String(admin.paused);
+  node.querySelector("[data-name]").textContent = `${admin.name} [${admin.id}]`;
+  node.querySelector("[data-status-text]").textContent = admin.paused ? "Paused" : "Active";
+
+  const btn = node.querySelector('[data-action="toggle-pause"]');
+  if (state.user && state.user.id === admin.id) {
+    btn.hidden = false;
+    btn.textContent = admin.paused ? "Unpause me" : "Pause me";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const { data } = await api("/api/admin/payout-ledger/toggle-pause", { method: "POST" });
+      if (data.success) {
+        loadPayoutLedger();
+      } else {
+        btn.disabled = false;
+        await showAlert(data.message || "Could not update your pause status.");
+      }
+    });
+  }
+  return node;
+}
+
+function buildLedgerMetricRow(admin, displayValue) {
+  const tr = document.createElement("tr");
+  tr.dataset.paused = String(admin.paused);
+  tr.innerHTML = `<td>${escapeHtml(admin.name)}${admin.paused ? " (paused)" : ""}</td><td>${escapeHtml(displayValue)}</td>`;
+  return tr;
 }
 
 function escapeHtml(str) {

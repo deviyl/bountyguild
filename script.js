@@ -2,8 +2,8 @@ const API_BASE = "https://bountyguild.deviyl.workers.dev";
 const VIEW_STORAGE_KEY = "bg_current_view";
 const ORDERS_CACHE_KEY = "bg_orders_cache_v1";
 const RESOLVED_RETENTION_MS = 60 * 60 * 1000;
-const POLL_INTERVAL_MS = 5000;
-const PAYOUT_LOCK_POLL_MS = 3000;
+const POLL_INTERVAL_MS = 15000;
+const PAYOUT_LOCK_POLL_MS = 15000;
 
 const state = { user: null, pollTimer: null, tickTimer: null, lockPollTimer: null };
 
